@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="id">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>Petualangan Mahayana — Plus (Sprite, Audio, Story)</title>
+<style>
+  html,body{height:100%;margin:0;background:#071226;color:#fff;font-family:Inter,system-ui,Arial}
+  #wrap{display:flex;min-height:100vh;align-items:center;justify-content:center;padding:18px;box-sizing:border-box}
+  canvas{background:linear-gradient(180deg,#eaf6ff,#fff);border-radius:12px;box-shadow:0 22px 50px rgba(0,0,0,0.5)}
+  .overlay{position:fixed;left:0;right:0;top:0;bottom:0;display:flex;align-items:center;justify-content:center}
+  .panel{background:#fff;color:#123;padding:16px;border-radius:12px;max-width:820px;width:94%;box-shadow:0 12px 30px rgba(0,0,0,0.2)}
+  .title{font-weight:800;margin:0 0 8px 0}
+  .muted{color:#345;font-size:14px}
+  .kbd{background:#eef;border-radius:6px;padding:6px 8px;color:#123;font-weight:700}
+  button.primary{background:#1f8b4c;border:none;padding:10px 12px;border-radius:8px;color:#fff;font-weight:800;cursor:pointer}
+  button.ghost{background:#fff;border:1px solid #e2efff;padding:8px 10px;border-radius:8px;color:#123;cursor:pointer}
+  .hud{position:fixed;right:26px;top:18px;background:rgba(255,255,255,0.94);color:#123;padding:10px;border-radius:8px;box-shadow:0 6px 18px rgba(0,0,0,0.12);width:250px}
+  .meter{height:10px;background:#eef6ff;border-radius:6px;overflow:hidden;margin-top:6px}
+  .meter > i{display:block;height:100%;background:linear-gradient(90deg,#c2f0d6,#7bd88f);width:0%}
+  .journal{max-height:220px;overflow:auto;padding:8px;border:1px dashed #e6f6ef;border-radius:8px;background:#fbfffb;color:#062}
+  .small{font-size:13px;color:#567}
+  footer{position:fixed;left:18px;bottom:18px;color:#789;font-size:13px}
+</style>
+</head>
+<body>
+<div id="wrap">
+  <canvas id="game" width="980" height="620" tabindex="0"></canvas>
+</div>
+
+<!-- Start / Menu -->
+<div id="ui-start" class="overlay" style="display:flex">
+  <div class="panel">
+    <h1 class="title">Petualangan Mahayana — Enhanced</h1>
+    <p class="muted">Versi ini menambahkan sprite animasi, musik ambient sintetis, alur cerita lebih kaya, dan encounter boss non-violent. Gerak: <span class="kbd">W A S D</span> atau <span class="kbd">←↑↓→</span>. Interaksi: <span class="kbd">Z</span>. Menu: <span class="kbd">X</span>.</p>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <button id="btn-start" class="primary">Mulai Petualangan</button>
+      <button id="btn-instr" class="ghost">Instruksi</button>
+      <button id="btn-sample" class="ghost">Demo Singkat</button>
+    </div>
+    <div style="margin-top:12px" class="small">Direkomendasikan untuk dipakai di kelas: setelah permainan, guru dapat memicu diskusi berdasarkan jurnal dan ending.</div>
+  </div>
+</div>
+
+<!-- Instruksi -->
+<div id="ui-instr" class="overlay" style="display:none">
+  <div class="panel">
+    <h2 class="title">Instruksi</h2>
+    <div class="muted small">
+      <ul>
+        <li>Jelajahi vihara, temui NPC, selesaikan quest untuk memahami nilai Mahayana.</li>
+        <li>Encounter utama termasuk: <em>Assist</em>, <em>Empathy</em>, <em>Puzzle Sutra</em>, <em>Dodge</em>, dan satu tantangan besar non-violent: <strong>Mara Temptation</strong>.</li>
+        <li>Skor <strong>Compassion</strong> memengaruhi ending: Jalan Bodhisattva, Jalan Belajar, atau Refleksi.</li>
+      </ul>
+    </div>
+    <div style="margin-top:12px"><button id="btn-back" class="primary">Kembali & Mulai</button></div>
+  </div>
+</div>
+
+<!-- UI Panel for dialogs/mini-games -->
+<div id="ui-panel" class="overlay" style="display:none;pointer-events:auto">
+  <div class="panel" id="panel-box">
+    <h2 class="title" id="panel-title">Dialog</h2>
+    <div id="panel-body" class="muted"></div>
+    <div id="panel-controls" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<!-- HUD / Journal -->
+<div class="hud" id="hud">
+  <div style="font-weight:800;color:#0b4a6f">Ananda — Murid</div>
+  <div style="margin-top:6px">Compassion: <strong id="compass-val">0</strong></div>
+  <div class="meter"><i id="comp-meter" style="width:0%"></i></div>
+  <div style="margin-top:8px" class="small">Quest selesai: <span id="done-count">0</span> / 5</div>
+  <div style="margin-top:8px">
+    <div style="font-weight:700;color:#0b4a6f">Jurnal</div>
+    <div class="journal" id="journal">
+      <div class="small">Belum ada catatan—mulai permainan untuk mengumpulkan pembelajaran.</div>
+    </div>
+  </div>
+</div>
+
+<footer>Made for teaching Mahayana — gunakan hasil akhir untuk refleksi kelas.</footer>
+
+<script>
+/* =========================
+  Petualangan Mahayana — Plus
+  - Enhanced sprites (animated frames drawn procedurally)
+  - Ambient music + SFX via WebAudio
+  - Expanded story: Avalokitesvara mentor, Maitreya riddle, Mara non-violent boss
+  - Mini-games: assist, empathy, puzzle, dodge, and boss combo
+  - Journal captures learning points
+  ========================= */
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const W = canvas.width, H = canvas.height;
+const TILE = 32;
+const MAP_W = 30, MAP_H = 18;
+
+// input
+let keys = {};
+window.addEventListener('keydown', e=>{ keys[e.key.toLowerCase()] = true; if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.key)) e.preventDefault(); });
+window.addEventListener('keyup', e=>{ keys[e.key.toLowerCase()] = false; });
+
+// game state
+let state = 'menu'; // menu, playing, dialog, mini, end
+let compassion = 0;
+let journal = [];
+
+/* ========= Audio (WebAudio small ambient synth) ========= */
+let audioCtx = null;
+function initAudio(){
+  if(audioCtx) return;
+  audioCtx = new (window.AudioContext||window.webkitAudioContext)();
+  // simple ambient pad using oscillator + lowpass + gain LFO
+  const o1 = audioCtx.createOscillator();
+  const o2 = audioCtx.createOscillator();
+  o1.type='sine'; o2.type='sine';
+  o1.frequency.value = 220; o2.frequency.value = 330;
+  const gain = audioCtx.createGain(); gain.gain.value = 0.06;
+  const lp = audioCtx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value = 800;
+  // LFO
+  const lfo = audioCtx.createOscillator(); lfo.frequency.value = 0.12;
+  const lfoGain = audioCtx.createGain(); lfoGain.gain.value = 0.04;
+  lfo.connect(lfoGain); lfoGain.connect(gain.gain);
+  o1.connect(gain); o2.connect(gain); gain.connect(lp); lp.connect(audioCtx.destination);
+  o1.start(); o2.start(); lfo.start();
+  // subtle random bell loop
+  setInterval(()=>{
+    const bell = audioCtx.createOscillator(); bell.type='triangle'; bell.frequency.value = 660 + Math.random()*120;
+    const g = audioCtx.createGain(); g.gain.value = 0.02;
+    bell.connect(g); g.connect(audioCtx.destination);
+    bell.start(); bell.stop(audioCtx.currentTime + 0.4);
+  }, 8000);
+}
+/* SFX helper */
+function playClick(){
+  if(!audioCtx) return;
+  const o = audioCtx.createOscillator(); o.type='square'; o.frequency.value=880;
+  const g = audioCtx.createGain(); g.gain.value=0.08;
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(); o.stop(audioCtx.currentTime+0.08);
+}
+
+/* ========= Map & NPCs ========= */
+let map = Array.from({length:MAP_H},(_,y)=>Array.from({length:MAP_W},(_,x)=> (x===0||y===0||x===MAP_W-1||y===MAP_H-1)?1:0));
+for(let x=6;x<24;x++){ map[4][x]=1; map[12][x]=1; }
+for(let y=5;y<12;y++){ map[y][6]=1; map[y][23]=1; }
+map[4][9]=0; map[12][18]=0;
+
+const npcs = [
+  { id:'guru', x:8, y:2, type:'npc', name:'Guru', dialog:[
+    "Selamat datang, Ananda. Jalan Mahayana menuntun melalui welas asih dan kebijaksanaan.",
+    "Beberapa perbuatan sederhana mencerminkan Bodhisattva."
+  ], interacted:false},
+  { id:'library', x:20, y:2, type:'npc', name:'Perpustakaan', dialog:[
+    "Di sini ada Sutra Hati: 'Form is emptiness; emptiness is form'. Pelajari maknanya."
+  ], interacted:false},
+  { id:'mait', x:6, y:2, type:'npc', name:'Maitreya', dialog:[
+    "Aku punya teka-teki untukmu. Jika berhasil, kau mendapatkan petunjuk sutra.",
+    "Teka-teki: 'Aku selalu maju namun tak pernah pergi; Aku memberi tanpa mengambil. Apa aku?'"
+  ], riddle:true, solved:false},
+  // encounters
+  { id:'enc1', x:4, y:10, type:'enc', name:'Pengemis', mini:'assist', done:false},
+  { id:'enc2', x:12, y:6, type:'enc', name:'Teman Sedih', mini:'empathy', done:false},
+  { id:'enc3', x:20, y:10, type:'enc', name:'Binatang', mini:'puzzle', done:false},
+  { id:'enc4', x:14, y:14, type:'enc', name:'Konflik', mini:'dodge', done:false},
+  // boss area (Mara)
+  { id:'mara', x:24, y:8, type:'boss', name:'Mara', dialog:[
+    "Mara (bisikan): Kau lemah, ambil senda-guna untuk dirimu, kenapa repot membantu orang lain?",
+    "Tunjukkan pilihmu, Ananda."
+  ], challenged:false}
+];
+
+/* ========= Player & animation frames ========= */
+const player = { px:5*TILE, py:8*TILE, w:24, h:28, speed:160, dir:0, animFrame:0, animTimer:0 };
+
+// draw richer sprite frames (procedural pixel style)
+function drawPlayerFrame(cx, cy, frame=0, ctx2=ctx){
+  ctx2.save(); ctx2.translate(cx,cy);
+  // use frame for small bobbing & arm swing
+  const bob = Math.sin(frame*0.6)*2;
+  // robe
+  ctx2.fillStyle = '#c87c32'; roundRectFill(ctx2,-12, -18 + bob, 24, 30, 6);
+  // sash
+  ctx2.fillStyle = '#b24f1a'; roundRectFill(ctx2,-12, -4 + bob, 24, 8, 4);
+  // head
+  ctx2.fillStyle = '#f3d7b8'; circleFill(ctx2,0,-24 + bob,8);
+  // hood accent
+  ctx2.strokeStyle = '#7a3f12'; ctx2.lineWidth=1; ctx2.beginPath(); ctx2.arc(0,-24+bob,8,Math.PI*0.1,Math.PI*0.9); ctx2.stroke();
+  // eyes
+  ctx2.fillStyle = '#222'; ctx2.fillRect(-3,-25 + bob,2,2); ctx2.fillRect(2,-25 + bob,2,2);
+  ctx2.restore();
+}
+
+function drawNPCFrame(cx, cy, key, ctx2=ctx){
+  ctx2.save(); ctx2.translate(cx,cy);
+  if(key === 'guru'){
+    // calm mentor robe
+    ctx2.fillStyle = '#6b9d3b'; roundRectFill(ctx2,-14,-22,28,36,6);
+    circleFill(ctx2,0,-28,9);
+  } else if(key === 'mait'){
+    ctx2.fillStyle = '#6f8db5'; roundRectFill(ctx2,-12,-20,24,32,6);
+    circleFill(ctx2,0,-26,8);
+  } else if(key === 'mara'){
+    // shadowy boss
+    ctx2.fillStyle = '#111'; roundRectFill(ctx2,-16,-26,32,44,10);
+    ctx2.fillStyle = '#440000'; circleFill(ctx2,0,-26,10);
+    // red eyes
+    ctx2.fillStyle = '#ff3b3b'; ctx2.fillRect(-6,-30,4,4); ctx2.fillRect(2,-30,4,4);
+  } else {
+    ctx2.fillStyle = '#f59e0b'; roundRectFill(ctx2,-12,-16,24,28,6);
+    circleFill(ctx2,0,-22,8);
+  }
+  ctx2.restore();
+}
+
+/* helper drawing primitives */
+function roundRectFill(c,x,y,w,h,r){ c.beginPath(); c.moveTo(x+r,y); c.arcTo(x+w,y,x+w,y+h,r); c.arcTo(x+w,y+h,x,y+h,r); c.arcTo(x,y+h,x,y,r); c.arcTo(x,y,x+w,y,r); c.closePath(); c.fill(); }
+function circleFill(c,x,y,r){ c.beginPath(); c.arc(x,y,r,0,Math.PI*2); c.fill(); }
+
+/* ========= Collision ========= */
+function tileAt(px,py){ return { tx: Math.floor(px/TILE), ty: Math.floor(py/TILE) }; }
+function isSolidTile(tx,ty){ if(tx<0||ty<0||tx>=MAP_W||ty>=MAP_H) return true; return map[ty][tx] === 1; }
+function blockedAt(px,py,w=player.w,h=player.h){ const pts=[{x:px,y:py},{x:px+w-1,y:py},{x:px,y:py+h-1},{x:px+w-1,y:py+h-1}]; for(const p of pts){ if(isSolidTile(Math.floor(p.x/TILE),Math.floor(p.y/TILE))) return true; } return false; }
+
+/* ========= UI & controls binding ========= */
+const uiStart = document.getElementById('ui-start');
+const uiInstr = document.getElementById('ui-instr');
+const uiPanel = document.getElementById('ui-panel');
+const panelTitle = document.getElementById('panel-title');
+const panelBody = document.getElementById('panel-body');
+const panelControls = document.getElementById('panel-controls');
+const compVal = document.getElementById('compass-val');
+const compMeter = document.getElementById('comp-meter');
+const journalEl = document.getElementById('journal');
+const doneCount = document.getElementById('done-count');
+
+document.getElementById('btn-start').onclick = ()=>{ uiStart.style.display='none'; initAudio(); startGame(); };
+document.getElementById('btn-instr').onclick = ()=>{ uiStart.style.display='none'; uiInstr.style.display='flex'; };
+document.getElementById('btn-back').onclick = ()=>{ uiInstr.style.display='none'; uiStart.style.display='none'; initAudio(); startGame(); };
+document.getElementById('btn-sample').onclick = ()=>{ uiStart.style.display='none'; initAudio(); sampleDemo(); };
+
+/* ========= Game Loop ========= */
+let last = 0;
+function startGame(){ state='playing'; requestAnimationFrame(loop); canvas.focus(); }
+function loop(ts){
+  if(!last) last = ts;
+  const dt = Math.min(0.05,(ts-last)/1000);
+  last = ts;
+  update(dt);
+  render();
+  if(state !== 'end') requestAnimationFrame(loop);
+}
+
+/* ========= Update ========= */
+function update(dt){
+  if(state !== 'playing') return;
+  let vx=0, vy=0;
+  if(keys['arrowleft']||keys['a']) vx = -1;
+  if(keys['arrowright']||keys['d']) vx = 1;
+  if(keys['arrowup']||keys['w']) vy = -1;
+  if(keys['arrowdown']||keys['s']) vy = 1;
+  if(vx!==0 && vy!==0){ vx *= Math.SQRT1_2; vy *= Math.SQRT1_2; }
+  const sp = player.speed;
+  const newPx = player.px + vx*sp*dt;
+  const newPy = player.py + vy*sp*dt;
+  if(!blockedAt(newPx, player.py)) player.px = newPx;
+  if(!blockedAt(player.px, newPy)) player.py = newPy;
+  // anim
+  player.animTimer += dt;
+  if(player.animTimer > 0.14){ player.animTimer = 0; player.animFrame = (player.animFrame+1)%60; }
+  // interaction
+  if((keys['z'] || keys['enter']) && state==='playing'){
+    keys['z']=keys['enter']=false;
+    // check nearby npc
+    const cx = player.px + player.w/2;
+    const cy = player.py + player.h/2;
+    for(const n of npcs){
+      const nx = n.x*TILE + TILE/2;
+      const ny = n.y*TILE + TILE/2;
+      const d = Math.hypot(cx - nx, cy - ny);
+      if(d < TILE*1.2){
+        if(n.type === 'npc') openDialog(n);
+        else if(n.type === 'enc') startMini(n);
+        else if(n.type === 'boss') startBoss(n);
+        break;
+      }
+    }
+  }
+}
+
+/* ========= Render ========= */
+function render(){
+  // clear
+  ctx.fillStyle = '#eaf6ff'; ctx.fillRect(0,0,W,H);
+  // tiles
+  for(let y=0;y<MAP_H;y++){
+    for(let x=0;x<MAP_W;x++){
+      const sx = x*TILE, sy = y*TILE;
+      if(map[y][x]===1){ ctx.fillStyle = '#cfe6ff'; ctx.fillRect(sx,sy,TILE,TILE); }
+      else { ctx.fillStyle = '#f7fbff'; ctx.fillRect(sx,sy,TILE,TILE); ctx.strokeStyle='rgba(0,0,0,0.02)'; ctx.strokeRect(sx+0.5,sy+0.5,TILE-1,TILE-1); }
+    }
+  }
+  // npcs
+  for(const n of npcs){
+    const sx = n.x*TILE + TILE/2;
+    const sy = n.y*TILE + TILE/2;
+    drawNPCFrame(sx, sy, n.id==='mara' ? 'mara' : n.id==='mait' ? 'mait' : n.id==='guru' ? 'guru' : 'enc');
+    ctx.fillStyle = '#123'; ctx.font = '12px sans-serif';
+    ctx.fillText(n.name, n.x*TILE - 6, n.y*TILE - 10);
+    if(n.type==='enc' && !n.done){ ctx.fillStyle = '#e53e3e'; ctx.fillText('!', n.x*TILE + 10, n.y*TILE - 22); }
+  }
+  // player
+  drawPlayerFrame(player.px + player.w/2, player.py + player.h/2, player.animFrame, ctx);
+  // HUD update
+  compVal.textContent = compassion;
+  compMeter.style.width = clamp((compassion+40)/90*100, 0, 100) + '%';
+  doneCount.textContent = npcs.filter(n=>n.type==='enc' && n.done).length + (npcs.find(n=>n.id==='mara' && n.challenged)?1:0);
+  // draw minimap small (optional)
+}
+
+/* ========= Dialog system ========= */
+function openDialog(n){
+  state='dialog';
+  uiPanel.style.display='flex';
+  panelTitle.textContent = n.name;
+  panelBody.innerHTML = '';
+  panelControls.innerHTML = '';
+  let i = 0;
+  const arr = n.dialog.slice();
+  function next(){
+    if(i >= arr.length){ closePanel(); if(n.riddle) askRiddle(n); return; }
+    panelBody.innerHTML = `<p>${arr[i]}</p>`;
+    panelControls.innerHTML = `<div style="display:flex;gap:8px"><button class="primary" id="btn-next">Lanjut</button><button class="ghost" id="btn-close">Tutup</button></div>`;
+    document.getElementById('btn-next').onclick = ()=>{ i++; next(); playClick(); };
+    document.getElementById('btn-close').onclick = ()=>{ closePanel(); };
+  }
+  next();
+}
+function closePanel(){ uiPanel.style.display='none'; state='playing'; }
+
+/* ========= Mini-games (enhanced) ========= */
+function startMini(n){
+  state='mini'; uiPanel.style.display='flex';
+  panelTitle.textContent = `${n.name} — Encounter`;
+  panelBody.innerHTML = `<p class="muted">Persiapkan dirimu...</p>`; panelControls.innerHTML='';
+  if(n.mini==='assist') miniAssist(n);
+  else if(n.mini==='empathy') miniEmpathy(n);
+  else if(n.mini==='puzzle') miniPuzzle(n);
+  else if(n.mini==='dodge') miniDodge(n);
+}
+
+/* -- Assist QTE (press Z rapidly + optional use Rice) -- */
+function miniAssist(n){
+  panelBody.innerHTML = `<p class="muted">Tekan <strong>Z</strong> berkali-kali untuk memberi bantuan (4 detik).</p>
+    <div style="height:16px;background:#eef6ff;border-radius:8px;margin-top:8px"><i id="q-fill" style="display:block;height:100%;background:#7bd88f;width:0%"></i></div>
+    <div id="q-msg" class="small muted" style="margin-top:8px">Kekuatan: 0</div>`;
+  let qte=0; const target=20; const maxT=4; let t=0;
+  function step(){
+    if(state!=='mini') return;
+    if(keys['z']){ qte++; keys['z']=false; playClick(); }
+    t += 0.016;
+    document.getElementById('q-fill').style.width = clamp(qte/target*100,0,100) + '%';
+    document.getElementById('q-msg').textContent = `Kekuatan: ${qte} / ${target}`;
+    if(qte >= target){
+      compassion += 12; n.done=true; journalPush(`Membantu ${n.name}: tindakan memberi nyata (+12 compassion).`);
+      panelBody.innerHTML += `<p class="muted">Berhasil! Compassion +12.</p>`;
+      panelControls.innerHTML = `<button class="primary" id="ok">Selesai</button>`;
+      document.getElementById('ok').onclick = ()=>{ closePanel(); state='playing'; checkStoryProgress(); };
+      return;
+    }
+    if(t > maxT){
+      compassion = Math.max(0, compassion-6); journalPush(`Gagal membantu ${n.name}; refleksi (-6).`);
+      panelBody.innerHTML += `<p class="muted">Waktu habis. Compassion -6.</p>`;
+      panelControls.innerHTML = `<button class="primary" id="ok2">Tutup</button>`;
+      document.getElementById('ok2').onclick = ()=>{ closePanel(); state='playing'; };
+      return;
+    }
+    requestAnimationFrame(step);
+  }
+  step();
+}
+
+/* -- Empathy match (choose best empathetic action) -- */
+function miniEmpathy(n){
+  const opts = [
+    { label:'Dengarkan tanpa menghakimi', score:10, note:'Kau memberi ruang untuk curahan hati.' },
+    { label:'Memberi saran cepat', score:0, note:'Saran bisa membantu tapi kadang bukan yang dibutuhkan.' },
+    { label:'Mengecilkan masalah', score:-5, note:'Respons seperti ini melukai.' }
+  ];
+  panelBody.innerHTML = `<p class="muted">Pilih reaksi paling empatik:</p>`;
+  const cont = document.createElement('div'); cont.style.display='flex'; cont.style.gap='8px';
+  opts.sort(()=>Math.random()-0.5).forEach(o=>{
+    const b = document.createElement('button'); b.className='primary'; b.style.background='#2b8'; b.textContent = o.label;
+    b.onclick = ()=>{ compassion = Math.max(0, compassion + o.score); if(o.score>0){ n.done=true; journalPush(`Menunjukkan empati pada ${n.name} (+${o.score}).`); } panelBody.innerHTML += `<p class="muted">${o.note} Compassion ${o.score>=0?'+':''}${o.score}.</p>`; panelControls.innerHTML = `<button class="primary" id="okE">Lanjut</button>`; document.getElementById('okE').onclick = ()=>{ closePanel(); state='playing'; checkStoryProgress(); }; };
+    cont.appendChild(b);
+  });
+  panelBody.appendChild(cont);
+}
+
+/* -- Puzzle Sutra: order fragments correctly -- */
+function miniPuzzle(n){
+  const correct = ["Semua makhluk","memiliki","kesempatan","untuk pencerahan"];
+  let pool = correct.slice().sort(()=>Math.random()-0.5);
+  panelBody.innerHTML = `<p class="muted">Susun potongan menjadi kalimat bermakna (klik urut):</p>`;
+  const seqDiv = document.createElement('div'); seqDiv.style.minHeight='28px'; seqDiv.className='small muted';
+  const poolDiv = document.createElement('div'); poolDiv.style.display='flex'; poolDiv.style.gap='8px'; poolDiv.style.marginTop='8px';
+  const chosen = [];
+  function render(){
+    poolDiv.innerHTML=''; seqDiv.textContent = chosen.join(' • ');
+    pool.forEach((s,i)=>{
+      const b = document.createElement('button'); b.className='ghost'; b.textContent = s; b.onclick = ()=>{ chosen.push(s); pool.splice(i,1); render(); checkDone(); };
+      poolDiv.appendChild(b);
+    });
+  }
+  function checkDone(){
+    if(chosen.length === correct.length){
+      const ok = chosen.join('|') === correct.join('|');
+      if(ok){ compassion += 12; n.done=true; journalPush(`Memahami Sutra: "${correct.join(' ')}" (+12).`); panelBody.innerHTML += `<p class="muted">Benar! Compassion +12.</p>`; }
+      else { compassion = Math.max(0, compassion-6); journalPush(`Kesalahan tafsir sutra; perlu pembelajaran lebih (-6).`); panelBody.innerHTML += `<p class="muted">Kurang tepat. Compassion -6.</p>`; }
+      panelControls.innerHTML = `<button class="primary" id="okP">Selesai</button>`; document.getElementById('okP').onclick = ()=>{ closePanel(); state='playing'; checkStoryProgress(); };
+    }
+  }
+  panelBody.appendChild(seqDiv); panelBody.appendChild(poolDiv); render();
+}
+
+/* -- Dodge mini-game (survive falling "negativity") -- */
+function miniDodge(n){
+  panelBody.innerHTML = `<p class="muted">Hindari pikiran negatif (kotak merah) selama 6 detik. Gunakan panah untuk pindah di dalam area.</p><div id="miniArea" style="width:640px;height:140px;background:#fff;border-radius:8px;margin-top:8px;overflow:hidden;position:relative"></div>`;
+  const area = document.getElementById('miniArea');
+  const areaW = 640, areaH = 140;
+  let t=0, bullets=[];
+  const centerX = areaW/2, centerY = areaH - 30;
+  // create small canvas
+  area.innerHTML = `<canvas width="${areaW}" height="${areaH}" id="miniC"></canvas>`;
+  const mc = document.getElementById('miniC'), mctx = mc.getContext('2d');
+  function frame(){
+    if(state!=='mini') return;
+    t += 0.016;
+    if(Math.random() < 0.12) bullets.push({x:Math.random()*areaW, y:-10, vy: 80 + Math.random()*120});
+    bullets.forEach(b=> b.y += b.vy*0.016);
+    // draw
+    mctx.clearRect(0,0,areaW,areaH);
+    mctx.fillStyle = '#f7fbff'; mctx.fillRect(0,0,areaW,areaH);
+    mctx.fillStyle = '#ff7b7b'; bullets.forEach(b=> mctx.fillRect(b.x-8,b.y-8,16,16));
+    // player safe spot center (green)
+    mctx.fillStyle = '#6bd97a'; mctx.fillRect(centerX-12,centerY-12,24,24);
+    // collision
+    for(const b of bullets){
+      if(Math.abs(b.x-centerX) < 18 && Math.abs(b.y-centerY) < 18){
+        compassion = Math.max(0, compassion-6); journalPush(`Terkena negativity (-6).`); panelBody.innerHTML += `<p class="muted">Tertabrak negativity. Compassion -6.</p>`; panelControls.innerHTML = `<button class="primary" id="okD">Tutup</button>`; document.getElementById('okD').onclick = ()=>{ closePanel(); state='playing'; };
+        bullets = []; return;
+      }
+    }
+    if(t >= 6){
+      compassion += 12; n.done=true; journalPush(`Bertahan dari negativity (+12).`); panelBody.innerHTML += `<p class="muted">Kamu bertahan! Compassion +12.</p>`; panelControls.innerHTML = `<button class="primary" id="okD2">Selesai</button>`; document.getElementById('okD2').onclick = ()=>{ closePanel(); state='playing'; checkStoryProgress(); }; return;
+    }
+    requestAnimationFrame(frame);
+  }
+  frame();
+}
+
+/* ========= Boss: Mara (non-violent multi-phase) ========= */
+function startBoss(n){
+  state='mini'; uiPanel.style.display='flex'; panelTitle.textContent = 'Mara — Ujian';
+  panelBody.innerHTML = `<p class="muted">Mara menguji niatmu. Kombinasikan tindakan: QTE => Puzzle => Pilihan Moral.</p>`; panelControls.innerHTML='';
+  // Phase 1: short QTE: press Z rapidly
+  panelBody.innerHTML += `<p class="small">Phase 1: Tunjukkan tekad (Z cepat 3 detik)</p><div style="height:12px;background:#eef6ff;border-radius:6px"><i id="boss-fill" style="display:block;height:100%;background:#7bd88f;width:0%"></i></div>`;
+  let q=0, target=28, time=0;
+  function p1(){
+    if(state!=='mini') return;
+    if(keys['z']){ q++; keys['z']=false; playClick(); }
+    time += 0.016;
+    document.getElementById('boss-fill').style.width = clamp(q/target*100,0,100) + '%';
+    if(q >= target){ compassion += 6; panelBody.innerHTML += `<p class="muted">Tekad tampak. Phase 1 berhasil (+6).</p>`; setTimeout(p2,500); return; }
+    if(time > 3){ compassion = Math.max(0, compassion-4); panelBody.innerHTML += `<p class="muted">Kurang tekad. Phase 1 gagal (-4).</p>`; setTimeout(p2,500); return; }
+    requestAnimationFrame(p1);
+  }
+  function p2(){
+    // Puzzle sutra quick: choose correct fragment
+    panelBody.innerHTML += `<p class="small">Phase 2: Pilih fragmen yang menunjukkan 'sunyata' (kosong).</p>`;
+    const frags = ['Bentuk','Kosong','Penderitaan','Kebahagiaan'].sort(()=>Math.random()-0.5);
+    const cont = document.createElement('div'); cont.style.display='flex'; cont.style.gap='8px';
+    frags.forEach(f=>{
+      const b = document.createElement('button'); b.className='ghost'; b.textContent = f; b.onclick = ()=>{
+        if(f === 'Kosong'){ compassion += 6; panelBody.innerHTML += `<p class="muted">Benar, berkaitan dengan Sunyata. (+6)</p>`; } else { compassion = Math.max(0, compassion-4); panelBody.innerHTML += `<p class="muted">Kurang tepat (-4).</p>`; }
+        setTimeout(p3,400);
+      }; cont.appendChild(b);
+    });
+    panelBody.appendChild(cont);
+  }
+  function p3(){
+    // Moral choice
+    panelBody.innerHTML += `<p class="small">Phase 3: Mara menawarkan 'kekuasaan' sebagai imbalan. Pilih responmu.</p>`;
+    const c1 = document.createElement('button'); c1.className='primary'; c1.textContent='Tolak & Ajari Mara'; c1.onclick = ()=>{
+      compassion += 12; journalPush('Mengampuni Mara dan mengajarkan welas asih (+12).'); panelBody.innerHTML += `<p class="muted">Kau memilih mengampuni. Mara terkejut dan tersentuh.</p>`; concludeBoss(true);
+    };
+    const c2 = document.createElement('button'); c2.className='ghost'; c2.textContent='Ambil Kekuasaan'; c2.onclick = ()=>{
+      compassion = Math.max(0, compassion-12); journalPush('Mengikuti godaan Mara (-12).'); panelBody.innerHTML += `<p class="muted">Kau tergoda; hati perlu refleksi.</p>`; concludeBoss(false);
+    };
+    panelControls.appendChild(c1); panelControls.appendChild(c2);
+  }
+  function concludeBoss(success){
+    npcs.find(x=>x.id==='mara').challenged = true;
+    if(success){ journalPush('Mara diuji: jalan pengampunan membuka ruang.'); compassion += 6; } else { journalPush('Mara: godaan kuat; refleksi diperlukan.'); }
+    panelControls.innerHTML = `<button class="primary" id="boss-done">Selesai</button>`;
+    document.getElementById('boss-done').onclick = ()=>{ closePanel(); state='playing'; checkStoryProgress(); };
+  }
+  p1();
+}
+
+/* ========= Journal & story progression ========= */
+function journalPush(text){
+  const time = new Date().toLocaleTimeString();
+  journal.unshift(`${time} — ${text}`);
+  renderJournal();
+}
+function renderJournal(){
+  if(journal.length===0){ journalEl.innerHTML = `<div class="small">Belum ada catatan—mulai permainan.</div>`; return; }
+  journalEl.innerHTML = journal.slice(0,8).map(t=>`<div class="small">${t}</div>`).join('');
+}
+
+/* check progress and final ending */
+function checkStoryProgress(){
+  const doneCount = npcs.filter(n=>n.type==='enc' && n.done).length + (npcs.find(n=>n.id==='mara' && n.challenged)?1:0);
+  if(doneCount >= 5){
+    setTimeout(()=> showEnding(), 300);
+  }
+}
+
+/* show ending with educational summary */
+function showEnding(){
+  state='dialog'; uiPanel.style.display='flex';
+  panelTitle.textContent = 'Refleksi Akhir';
+  let title='Perlu Renungan', text='';
+  if(compassion >= 40){ title='Jalan Bodhisattva'; text='Aksi-aksimu menunjukkan welas asih aktif; teruskan praktik.'; }
+  else if(compassion >= 18){ title='Jalan Belajar'; text='Kamu menunjukkan tanda-tanda pelatihan welas asih; terus berlatih.'; }
+  else { title='Renungan Diperlukan'; text='Pilihanmu menunjukkan perlu refleksi lebih jauh tentang welas asih.'; }
+  panelBody.innerHTML = `<p class="muted"><strong>${title}</strong></p><p class="muted">${text}</p>
+  <div style="margin-top:8px" class="small muted">Ringkasan Pembelajaran:<ul>
+  <li>Mahayana: Kendaraan Agung; pentingkan pembebasan semua makhluk.</li>
+  <li>Bodhisattva: niat, tindakan, dan latihan welas asih + kebijaksanaan.</li>
+  <li>Sutra Hati: konsep Sunyata (kosong) sebagai inti kebijaksanaan.</li></ul></div>`;
+  panelControls.innerHTML = `<div style="display:flex;gap:8px"><button class="primary" id="replay">Main Lagi</button><button class="ghost" id="closeEnd">Tutup</button></div>`;
+  document.getElementById('replay').onclick = ()=>{ resetGame(); closePanel(); state='playing'; };
+  document.getElementById('closeEnd').onclick = ()=>{ closePanel(); state='end'; };
+}
+
+/* reset */
+function resetGame(){
+  compassion = 0; journal = []; renderJournal();
+  for(const n of npcs){ if(n.type==='enc'){ n.done=false; } if(n.id==='mait'){ n.solved=false; } if(n.id==='mara'){ n.challenged=false; } }
+  player.px = 5*TILE; player.py = 8*TILE; last = performance.now();
+  state='playing'; requestAnimationFrame(loop);
+}
+
+/* sample demo (short run to showcase features) */
+function sampleDemo(){
+  state='playing'; initAudio();
+  // auto trigger two encounters and boss demonstration
+  setTimeout(()=> startMini(npcs.find(n=>n.id==='enc1')), 300);
+  setTimeout(()=> startMini(npcs.find(n=>n.id==='enc3')), 7000);
+  setTimeout(()=> startBoss(npcs.find(n=>n.id==='mara')), 14000);
+}
+
+/* utility */
+function clamp(v,a,b){ return Math.max(a,Math.min(b,v)); }
+
+/* initialize */
+renderJournal();
+ctx.fillStyle='#0b4a6f'; ctx.fillRect(0,0,10,10);
+
+/* ensure canvas focus */
+canvas.addEventListener('click', ()=>{ canvas.focus(); });
+
+</script>
+</body>
+</html>
