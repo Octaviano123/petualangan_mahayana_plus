@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8"/>
 <meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Petualangan Mahayana — Plus (Sprite, Audio, Story)</title>
+<title>Petualangan Mahayana</title>
 <style>
   html,body{height:100%;margin:0;background:#071226;color:#fff;font-family:Inter,system-ui,Arial}
   #wrap{display:flex;min-height:100vh;align-items:center;justify-content:center;padding:18px;box-sizing:border-box}
@@ -31,7 +31,7 @@
 <!-- Start / Menu -->
 <div id="ui-start" class="overlay" style="display:flex">
   <div class="panel">
-    <h1 class="title">Petualangan Mahayana — Enhanced</h1>
+    <h1 class="title">Petualangan Mahayana</h1>
     <p class="muted">Versi ini menambahkan sprite animasi, musik ambient sintetis, alur cerita lebih kaya, dan encounter boss non-violent. Gerak: <span class="kbd">W A S D</span> atau <span class="kbd">←↑↓→</span>. Interaksi: <span class="kbd">Z</span>. Menu: <span class="kbd">X</span>.</p>
     <div style="display:flex;gap:8px;margin-top:12px">
       <button id="btn-start" class="primary">Mulai Petualangan</button>
@@ -344,7 +344,7 @@ function closePanel(){ uiPanel.style.display='none'; state='playing'; }
 /* ========= Mini-games (enhanced) ========= */
 function startMini(n){
   state='mini'; uiPanel.style.display='flex';
-  panelTitle.textContent = `${n.name} — Encounter`;
+  panelTitle.textContent = `${n.name}`;
   panelBody.innerHTML = `<p class="muted">Persiapkan dirimu...</p>`; panelControls.innerHTML='';
   if(n.mini==='assist') miniAssist(n);
   else if(n.mini==='empathy') miniEmpathy(n);
